@@ -1,0 +1,72 @@
+# Use a modern version of Docker Compose
+version: '3.8'
+
+# This is where we define our two microservices
+services:
+
+  # ------------------------------------
+  # Service 1: webhook-receiver
+  # - Receives webhooks from GitHub
+  # - Forwards clean data to the notification-service
+  # ------------------------------------
+  webhook-receiver:
+    # Tells Docker to build this image from the Dockerfile
+    # located in the './services/webhook-receiver' folder
+    build:
+      context: ./services/webhook-receiver
+    
+    # Expose port 8080 on your host machine and map it to
+    # port 8080 inside this container. This is the port
+    # GitHub (via a tool like ngrok) will send webhooks to.
+    ports:
+      - "8080:8080"
+      
+    # Environment variables passed into the container
+    environment:
+      # This is the "internal API" URL.
+      # Notice we are using the *service name* 'notification-service'
+      # as the hostname. Docker Compose handles this internal DNS.
+      NOTIFICATION_SERVICE_URL: http://notification-service:8081/notify
+      
+    # Connect this service to our custom network
+    networks:
+      - github-monitor-net
+      
+    # Always restart the service if it stops, unless we manually stop it
+    restart: unless-stopped
+
+  # ------------------------------------
+  # Service 2: notification-service
+  # - Receives internal API calls
+  # - Sends formatted messages to Slack
+  # ------------------------------------
+  notification-service:
+    # Build from the Dockerfile in its own directory
+    build:
+      context: ./services/notification-service
+      
+    # We expose this port mainly for debugging.
+    # It only *needs* to be accessible to the webhook-receiver
+    # via the internal Docker network.
+    ports:
+      - "8081:8081"
+      
+    # Pass environment variables
+    environment:
+      # This tells Docker Compose to look for a variable named
+      # SLACK_WEBHOOK_URL in a file named '.env' in this same
+      # directory, and then pass it into the container.
+      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL}
+      
+    # Connect this service to our custom network
+    networks:
+      - github-monitor-net
+      
+    restart: unless-stopped
+
+# Define the custom network
+# Using a custom bridge network allows our services
+# to find each other using their names (e.g., 'webhook-receiver')
+networks:
+  github-monitor-net:
+    driver: bridge
